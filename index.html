@@ -53,7 +53,7 @@
       <option value="entrance">Front entrance</option><option value="living">Living hall</option>
       <option value="dining">Dining</option><option value="kitchen">Kitchen</option>
       <option value="bed1">Bedroom 1</option><option value="bed2">Bedroom 2</option>
-      <option value="ffliving">First floor</option><option value="terrace">Covered terrace</option>
+      <option value="ffliving">First floor</option><option value="terrace">Covered terrace</option><option value="roof">Roof terrace</option><option value="store">Store room (roof)</option>
     </select>
     <button id="wRun">Run</button>
     <button id="wExit">✕ Exit walk</button>
@@ -85,7 +85,7 @@
     <button id="tLamps" class="on">Lamps</button>
     <button id="tZones">Clearance zones</button>
     <button id="tRoofT" class="on">Terrace roof</button>
-    <button id="tRoofH">House roof</button>
+    <button id="tRoofH">Roof terrace + solar</button>
   </div>
   <div class="lbl">View</div>
   <div class="row">
@@ -102,7 +102,7 @@
 <div id="legend" class="panel">
   <div><span class="sw" style="background:#7fb6dc"></span>Window / French window / ventilator (glass)</div>
   <div><span class="sw" style="background:#c7a27a"></span>Door leaf (shown open)</div>
-  <div><span class="sw" style="background:#55595e"></span>Wall cut line (house roof hidden)</div>
+  <div><span class="sw" style="background:#55595e"></span>Wall cut line (roof hidden)</div>
   <div><span class="sw" style="background:#7fc99b"></span>Door clearance zone · <span class="sw" style="background:#8bb8e6;margin-left:4px"></span>Window zone</div>
 </div>
 
@@ -690,22 +690,114 @@ room(ff,FF,'Covered terrace',`over the portico · 558 sq ft gross`,558,FLOORC.op
 // parapets (3'6") around the terrace
 box(ff,0,.5,FF,FF+3.5,39,63.25,M.rail); box(ff,.5,28,FF,FF+3.5,62.75,63.25,M.rail); box(ff,27.5,28,FF,FF+3.5,50.2,62.75,M.rail);
 // railing round the opening over the outside stair (open where the stair arrives)
-rail(ff,17.5,28,50.15,50.25,FF); rail(ff,17.45,17.55,43.5,46.85,FF);
+rail(ff,17.5,28,50.15,50.25,FF);   // flight 3 to the roof starts at x 17'6" on the other half
 // columns (9" x 12") carrying the terrace slab and the roof
 const COLS=[[0,.75,62.25,63.25],[13.6,14.4,62.25,63.25],[27.25,28,62.25,63.25],[0,.75,52.5,53.5],[27.25,28,52.5,53.5]];
 COLS.forEach(([a,b,c,d])=>{box(gf,a,b,0,FF-SLAB,c,d,M.concrete); box(ff,a,b,FF,FF+WH,c,d,M.concrete);});
 box(gf,0,28,FF-SLAB-1,FF-SLAB,62.25,63.25,M.concrete);                                // front beam
-// roofs: over the terrace (on by default) and over the house (off in dollhouse view)
-const roofTerrace=[], roofHouse=[], RT=FF+WH;
-{ const sh=new THREE.Shape(); [[0,39],[16.75,39],[16.75,43.5],[28,43.5],[28,63.25],[0,63.25]].forEach(([x,z],i)=>i?sh.lineTo(x-OX,z-OZ):sh.moveTo(x-OX,z-OZ));
-  const m=new THREE.Mesh(new THREE.ExtrudeGeometry(sh,{depth:SLAB,bevelEnabled:false}),M.slab); m.rotation.x=Math.PI/2; m.position.y=RT+SLAB; m.castShadow=m.receiveShadow=true; ff.add(m); roofTerrace.push(m);
-  roofTerrace.push(box(ff,0,28,RT-1,RT,62.25,63.25,M.concrete), box(ff,0,.75,RT-1,RT,39,62.25,M.concrete), box(ff,27.25,28,RT-1,RT,43.5,62.25,M.concrete));
-  roofTerrace.push(box(ff,-.25,28.25,RT+SLAB,RT+SLAB+1.5,62.75,63.5,M.rail));
-  const hs=new THREE.Shape(); [[0,0],[28,0],[28,43.5],[16.75,43.5],[16.75,39],[0,39]].forEach(([x,z],i)=>i?hs.lineTo(x-OX,z-OZ):hs.moveTo(x-OX,z-OZ));
-  const r=new THREE.Mesh(new THREE.ExtrudeGeometry(hs,{depth:SLAB,bevelEnabled:false}),M.slab); r.rotation.x=Math.PI/2; r.position.y=RT+SLAB; r.castShadow=r.receiveShadow=true; ff.add(r); roofHouse.push(r);
-  roofHouse.push(box(ff,0,28,RT+SLAB,RT+SLAB+3,0,.5,M.rail), box(ff,0,.5,RT+SLAB,RT+SLAB+3,.5,62.75,M.rail), box(ff,27.5,28,RT+SLAB,RT+SLAB+3,.5,62.75,M.rail));
-  roofHouse.forEach(m=>m.visible=false);
+// ---------- roof level: terrace roof, house roof, upper outside stair, cabin, store room, solar ----------
+const RT=FF+WH, RL=RT+SLAB;                       // roof underside 22'0", roof top 22'6"
+const rtG=new THREE.Group(), rhG=new THREE.Group(); ff.add(rtG); ff.add(rhG);
+const roofTerrace=[rtG], roofHouse=[rhG];
+const slabShape=(pts,holes=[])=>{const s=new THREE.Shape();pts.forEach(([x,z],i)=>i?s.lineTo(x-OX,z-OZ):s.moveTo(x-OX,z-OZ));
+  holes.forEach(hp=>{const h=new THREE.Path();hp.forEach(([x,z],i)=>i?h.lineTo(x-OX,z-OZ):h.moveTo(x-OX,z-OZ));s.holes.push(h);});return s;};
+const slab=(g,shape,top,mat=M.slab)=>{const m=new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth:SLAB,bevelEnabled:false}),mat);
+  m.rotation.x=Math.PI/2;m.position.y=top;m.castShadow=m.receiveShadow=true;m.userData.noCollide=1;g.add(m);return m;};
+const cyl0=(g,x,z,rt,rb,y0,y1,mat)=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,y1-y0,10),mat);m.position.set(x-OX,(y0+y1)/2,z-OZ);g.add(m);return m;};
+const OPEN=[[17.5,43.5],[28,43.5],[28,50.2],[17.5,50.2]];
+
+// roof over the covered terrace, with the opening for the upper stair
+slab(rtG,slabShape([[0,39],[16.75,39],[16.75,43.5],[28,43.5],[28,63.25],[0,63.25]],[OPEN]),RL);
+box(rtG,0,28,RT-1,RT,62.25,63.25,M.concrete); box(rtG,0,.75,RT-1,RT,39,62.25,M.concrete); box(rtG,27.25,28,RT-1,RT,50.7,62.25,M.concrete);
+// roof over the house
+slab(rhG,slabShape([[0,0],[28,0],[28,43.5],[16.75,43.5],[16.75,39],[0,39]]),RL);
+
+// ---- upper outside stair (first floor → roof): 18 risers of 7", 10" treads, above the existing flights ----
+const UR=(RL-FF)/18, UT=7.5/9;
+for(let i=0;i<9;i++) box(ff,17.5+i*UT,17.5+(i+1)*UT,FF+(i+1)*UR-.45,FF+(i+1)*UR,43.5,46.85,M.stair);      // flight 3 → west
+box(ff,25,28,FF+9*UR-.45,FF+9*UR,43.5,50.2,M.stair);                                                    // mid landing 17'3"
+for(let i=0;i<9;i++){const xa=25-(i+1)*UT,xb=25-i*UT,top=FF+(10+i)*UR;
+  box(ff,xa,xb,top-.45,top,46.85,50.2,M.stair);                                                          // flight 4 → east
+  rail(ff,xa,xb,50.1,50.2,top);                                                                          // open (front) side
+  box(ff,xa,xb,FF,top+3,46.8,46.9,M.wall);}                                                              // dividing wall
+rail(ff,27.9,28,43.5,50.2,FF+9*UR); rail(ff,25,27.9,50.1,50.2,FF+9*UR);                                  // mid-landing railings
+
+// ---- roof terrace floor + 3'6" parapet ----
+const RF=FM(TEX.concrete,{color:0xd9d2c4,roughness:.9});
+room(rhG,RL,'Roof terrace','',0,RF,[[.5,27.5,.5,21.25],[.5,16.75,21.25,39],[16.75,27.5,38.5,43.5]],[2,15.5,23,27]);
+room(rtG,RL,'Roof terrace','',0,RF,[[.5,16.75,39,43.5],[.5,15,43.5,50.7],[.5,27.5,50.7,62.75]],[2,13,55,59]);
+box(rhG,0,28,RL,RL+3.5,0,.5,M.rail); box(rhG,0,.5,RL,RL+3.5,.5,39,M.rail);
+box(rhG,27.5,28,RL,RL+3.5,.5,21.25,M.rail); box(rhG,27.5,28,RL,RL+3.5,38.5,43.5,M.rail);
+box(rtG,0,.5,RL,RL+3.5,39,63.25,M.rail); box(rtG,.5,28,RL,RL+3.5,62.75,63.25,M.rail); box(rtG,27.5,28,RL,RL+3.5,50.7,62.75,M.rail);
+
+// ---- stair headroom cabin (on the terrace roof), door on the east side ----
+const CH=8.5;
+wall(rtG,RL,[15,28,43.5,44],[],CH); wall(rtG,RL,[15,28,50.2,50.7],[],CH);
+wall(rtG,RL,[15,15.5,44,50.2],[{t:'D',f:47.4,e:49.9,s:-1}],CH); wall(rtG,RL,[27.5,28,44,50.2],[],CH);
+room(rtG,RL,'Stair cabin','landing',0,FLOORC.utility,[[15.5,17.5,44,50.2]]);
+box(rtG,14.75,28.25,RL+CH,RL+CH+.5,43.25,50.95,M.concrete);                                             // cabin roof
+box(rtG,26.6,26.8,RL+CH+.5,RL+CH+5,46.9,47.1,S.steel); cyl0(rtG,26.7,47,.06,.01,RL+CH+5,RL+CH+5.6,S.steel); // lightning arrester
+
+// ---- electrical + store room: walls sit on Bedroom 2's walls ----
+const SH=8.5;
+wall(rhG,RL,[16.75,28,21.25,21.75],[],SH); wall(rhG,RL,[16.75,28,38,38.5],[],SH);
+wall(rhG,RL,[16.75,17.25,21.75,38],[{t:'D',f:22,e:24.5,s:1}],SH);
+wall(rhG,RL,[27.25,28,21.75,38],[{t:'W',f:33,e:37}],SH);
+room(rhG,RL,'Electrical + store room',`10'0" × 16'0"`,160,FLOORC.utility,[[17.25,27.25,21.75,38]],[17.6,20.2,26,35]);
+box(rhG,16.6,28.15,RL+SH,RL+SH+.5,21.1,38.65,M.concrete);                                                // its roof
+{ // fittings (real sizes)
+  const g=rhG, b=RL, F=(n,dims,...a)=>{const m=box(g,...a);m.userData={name:n,dims,piece:1};pickables.push(m);furnMeshes.push(m);return m;};
+  const grey=new THREE.MeshStandardMaterial({color:0x8d949a,roughness:.5,metalness:.5});
+  const inv=new THREE.MeshStandardMaterial({color:0xe9ecee,roughness:.35});
+  F('Hybrid inverter 5 kW (wall-mounted)',`1'8" × 0'8" × 2'4"`,19.5,21.17,b+3.2,b+5.53,37.33,38,inv);
+  box(g,19.9,20.77,b+4.6,b+5.1,37.3,37.33,S.dark);
+  F('Lithium battery rack ≈10 kWh (48 V)',`2'0" × 2'0" × 5'0"`,22,24,b,b+5,36,38,grey);
+  for(let i=0;i<5;i++) box(g,22.05,23.95,b+.3+i*.92,b+.35+i*.92,35.97,36.0,S.dark);
+  F('AC / DC distribution boxes',`2'6" × 0'5" × 1'4"`,17.5,20,b+5.8,b+7.13,37.6,38,inv);
+  F('Earthing / isolator panel',`1'0" × 0'5" × 1'4"`,24.6,25.6,b+3.5,b+4.8,37.6,38,inv);
+  // storage shelving (steel racks)
+  const rack=(x0,x1,z0,z1)=>{F('Storage rack',`${fmtFt(x1-x0)} × ${fmtFt(z1-z0)} × 7'0"`,x0,x1,b+6.9,b+7,z0,z1,grey);
+    for(let k=0;k<4;k++) box(g,x0,x1,b+.4+k*1.65,b+.47+k*1.65,z0,z1,grey);
+    [[x0,z0],[x1-.1,z0],[x0,z1-.1],[x1-.1,z1-.1]].forEach(([x,z])=>box(g,x,x+.1,b,b+7,z,z+.1,grey));};
+  rack(20.5,27.25,21.75,23.25); rack(25.75,27.25,25,31);
+  // boxes on the racks
+  [[21,22.3,1],[23,24.6,1],[25,26.6,2.7],[21.4,22.8,2.7]].forEach(([x0,x1,y])=>box(g,x0,x1,b+y,b+y+.9,21.95,23,S.oak));
 }
+// fixed steel ladder on the store room's east wall (to clean the upper panels)
+for(const z of [34.6,36.1]) box(rhG,16.45,16.6,RL,RL+SH+1.5,z,z+.1,S.steel);
+for(let y=RL+.8;y<RL+SH+1.4;y+=1) box(rhG,16.45,16.6,y,y+.08,34.6,36.2,S.steel);
+
+// ---- solar: 10 × ≈545 W panels (1134 × 2279 mm), facing south, 10° tilt ----
+const pvTex=(()=>{const c=document.createElement('canvas');c.width=256;c.height=512;const g=c.getContext('2d');
+  g.fillStyle='#c9ced3';g.fillRect(0,0,256,512);g.fillStyle='#132036';g.fillRect(8,8,240,496);
+  for(let r=0;r<12;r++)for(let k=0;k<6;k++){g.fillStyle=(r+k)%2?'#1b2b47':'#18273f';g.fillRect(12+k*39.5,12+r*40.8,37,38.5);}
+  g.fillStyle='rgba(200,210,225,.35)';for(let k=0;k<6;k++)for(let l=1;l<4;l++)g.fillRect(12+k*39.5+l*9.2,12,1,488);
+  const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=8;return t;})();
+const pvM=new THREE.MeshStandardMaterial({map:pvTex,roughness:.18,metalness:.35,envMapIntensity:1.6});
+const alu=new THREE.MeshStandardMaterial({color:0xb9bfc4,roughness:.4,metalness:.7});
+const PW=3.72, PL=7.48, TILT=10*Math.PI/180, DEP=PL*Math.cos(TILT), RISE=PL*Math.sin(TILT);
+let pvN=0;
+function pvRow(g,n,cx,zS,base,low){                     // zS = south (low) edge
+  const w=n*PW+(n-1)*.04, x0=cx-w/2;
+  for(let i=0;i<n;i++){
+    const px=x0+i*(PW+.04)+PW/2, m=new THREE.Mesh(new THREE.BoxGeometry(PW,.12,PL),pvM);
+    m.rotation.x=-TILT; m.position.set(px-OX,base+low+RISE/2+.06,zS+DEP/2-OZ); m.castShadow=m.receiveShadow=true;
+    m.userData={name:`Solar panel PV ${++pvN} · ≈545 W`,dims:`3'8" × 7'6" (1.13 × 2.28 m), 10° tilt facing south`,piece:1};
+    g.add(m); pickables.push(m);
+  }
+  for(const [z,h] of [[zS+.3,low],[zS+DEP-.3,low+RISE-.1]]){             // legs + rails
+    box(g,x0,x0+w,base+h-.12,base+h,z-.06,z+.06,alu);
+    for(let i=0;i<=n;i++){const lx=Math.min(x0+i*(PW+.04),x0+w-.12); box(g,lx,lx+.12,base,base+h-.12,z-.06,z+.06,alu);}
+  }
+}
+pvRow(rhG,4,14,3.5,RL,1.5);                                 // row A on the main roof
+pvRow(rhG,3,22.375,21.4,RL+SH+SLAB,1);                      // PV 5–7 on the store-room roof
+pvRow(rhG,3,22.375,21.4+DEP+2.25,RL+SH+SLAB,1);             // PV 8–10
+// DC cable conduit from row A to the store room
+box(rhG,14,14.25,RL,RL+.25,10.9,21.25,S.dark); box(rhG,14,17.25,RL,RL+.25,21,21.25,S.dark);
+
+rhG.visible=false;   // dollhouse view: house roof hidden by default
+
 // stair hole railing
 box(ff,15.75,15.9,FF,FF+3,11.25,18.7,M.rail); box(ff,15.75,22,FF,FF+3,11.25,11.4,M.rail);
 
@@ -837,7 +929,9 @@ function buildColliders(){
   });});
   if(ff.visible){ const oy=ff.position.y;   // first-floor slab minus the stair opening
     [[0,28,0,11.25],[0,15.75,11.25,21.25],[22,28,11.25,21.25],[0,28,21.25,43.5],[0,17.5,43.5,50.2],[0,28,50.2,63.25]].forEach(r=>
-      colliders.push({x0:r[0]-OX,x1:r[1]-OX,z0:r[2]-OZ,z1:r[3]-OZ,y0:FF-SLAB+oy,y1:FF+oy})); }
+      colliders.push({x0:r[0]-OX,x1:r[1]-OX,z0:r[2]-OZ,z1:r[3]-OZ,y0:FF-SLAB+oy,y1:FF+oy}));
+    const roofR=[]; if(rhG.visible) roofR.push([0,28,0,39],[16.75,28,39,43.5]); if(rtG.visible) roofR.push([0,16.75,39,43.5],[0,17.5,43.5,50.2],[0,28,50.2,63.25]);
+    roofR.forEach(r=>colliders.push({x0:r[0]-OX,x1:r[1]-OX,z0:r[2]-OZ,z1:r[3]-OZ,y0:RL-SLAB+oy,y1:RL+oy})); }
 }
 const hitC=(c,x,z,r)=>{const qx=Math.max(c.x0,Math.min(x,c.x1)),qz=Math.max(c.z0,Math.min(z,c.z1));return (qx-x)**2+(qz-z)**2<r*r;};
 function groundAt(x,z,feet){let g=-1e9;for(const c of colliders) if(c.y1<=feet+STEP&&c.y1>g&&hitC(c,x,z,.35)) g=c.y1;return g;}
@@ -853,6 +947,8 @@ const SPAWNS={
   bed2:{x:18.9,z:25.4,f:P,yaw:-2.35,n:'Bedroom 2'},
   ffliving:{x:13.2,z:36.4,f:FF,yaw:.75,n:'First floor living'},
   terrace:{x:9,z:58,f:FF,yaw:.25,n:'Covered terrace'},
+  roof:{x:9,z:33,f:RL,yaw:.35,n:'Roof terrace'},
+  store:{x:19,z:30,f:RL,yaw:-2.6,n:'Store room'},
 };
 function spawn(k){const s=SPAWNS[k];W.x=s.x-OX;W.z=s.z-OZ;W.feet=groundAt(W.x,W.z,s.f+.5);W.yaw=s.yaw;W.pitch=-.08;W.vy=0;}
 
@@ -940,8 +1036,8 @@ function walkStep(dt){
   if((whereT-=dt)<0){whereT=.25;
     downRay.set(new THREE.Vector3(W.x,W.feet+1,W.z),new THREE.Vector3(0,-1,0)); downRay.far=2;
     const hit=downRay.intersectObjects(floorMeshes.filter(visChain),false)[0];
-    const lvl=W.feet>FF-1?'First floor':W.feet>P-.3?'Ground floor':'Outside';
-    where.textContent=hit?`${hit.object.userData.name} · ${lvl}`:(W.feet>P+1&&W.feet<FF-1?'Staircase':lvl);
+    const lvl=W.feet>RL-1?'Roof':W.feet>FF-1?'First floor':W.feet>P-.3?'Ground floor':'Outside';
+    where.textContent=hit?`${hit.object.userData.name} · ${lvl}`:((W.feet>P+1&&W.feet<FF-1)||(W.feet>FF+1&&W.feet<RL-1)?'Staircase':lvl);
   }
 }
 
